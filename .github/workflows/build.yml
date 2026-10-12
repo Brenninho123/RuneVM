@@ -68,17 +68,19 @@ jobs:
           haxelib run hmm setup --quiet
           haxelib run hmm install --quiet
 
-      - name: Configure Lime Android
+      - name: Configure Lime Android Environment
         run: |
           NDK_PATH="$ANDROID_HOME/ndk/25.2.9519653"
-          mkdir -p ~/.lime
-          cat <<EOF > ~/.lime/config.xml
+          
+          echo "ANDROID_SDK=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          
+          mkdir -p /home/runner/.lime
+          cat <<EOF > /home/runner/.lime/config.xml
           <?xml version="1.0" encoding="utf-8"?>
           <config>
             <define name="ANDROID_SETUP" value="true" />
-            <environment id="JAVA_HOME" value="$JAVA_HOME" />
-            <environment id="ANDROID_SDK" value="$ANDROID_HOME" />
-            <environment id="ANDROID_NDK_ROOT" value="$NDK_PATH" />
             <section id="android">
               <path name="JAVA_HOME" value="$JAVA_HOME" />
               <path name="ANDROID_SDK" value="$ANDROID_HOME" />
