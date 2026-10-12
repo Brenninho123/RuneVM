@@ -1,0 +1,30 @@
+{
+  "indentation": {
+    "character": "\t",
+    "tabWidth": 4
+  },
+  "sameLine": {
+    "expressionIf": true,
+    "expressionTry": true,
+    "ifBody": "sameLine",
+    "tryBody": "sameLine"
+  },
+  "whitespace": {
+    "aroundBitwise": true,
+    "aroundBoolOp": true,
+    "aroundInterval": false,
+    "aroundOpAddSub": true,
+    "aroundOpAssign": true,
+    "aroundOpCompare": true,
+    "aroundOpMulDiv": true,
+    "aroundOpShift": true,
+    "aroundTypeColon": "after",
+    "beforeOpeningBrace": true,
+    "typeHintColon": "after"
+  },
+  "wrapping": {
+    "methodChain": {
+      "defaultPolicy": "wrapIfNeeded"
+    }
+  }
+}
