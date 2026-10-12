@@ -19,6 +19,11 @@
       "name": "flixel",
       "type": "haxelib",
       "version": "6.2.0"
+    },
+    {
+      "name": "extension-androidtools",
+      "type": "haxelib",
+      "version": "2.2.2"
     }
   ]
 }
