@@ -21,6 +21,7 @@
 	<android permission="android.permission.WRITE_EXTERNAL_STORAGE" if="android" />
 	<android permission="android.permission.MANAGE_EXTERNAL_STORAGE" if="android" />
 
+	<haxedef name="HXCPP_ANDROID_PLATFORM" value="21" if="android" />
 	<haxedef name="HXCPP_CPP11" if="android" />
 	<haxedef name="NO_PRECOMPILED_HEADERS" if="android" />
 	<haxeflag name="-dce" value="full" />
