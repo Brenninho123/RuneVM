@@ -6,8 +6,7 @@ import machine.Init;
 import machine.play.PlayState;
 
 #if android
-import android.os.Build;
-import android.os.Environment;
+import android.Tools;
 import android.Permissions;
 #end
 
@@ -16,9 +15,9 @@ class Main extends Sprite {
         super();
 
         #if android
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                Environment.requestManageAllFilesAccessPermission();
+        if (Tools.getSDKversion() >= 30) {
+            if (!Permissions.getGrantedPermissions().contains(Permissions.MANAGE_EXTERNAL_STORAGE)) {
+                Permissions.requestPermission(Permissions.MANAGE_EXTERNAL_STORAGE);
             }
         } else {
             Permissions.requestPermissions([
