@@ -1,4 +1,4 @@
-name: Windows Build
+name: Cross-Platform Build
 
 on:
   push:
@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-windows:
+    name: Build Windows
     runs-on: windows-latest
 
     steps:
@@ -24,12 +25,56 @@ jobs:
           haxelib run hmm setup --quiet
           haxelib run hmm install --quiet
 
-      - name: Build Project
+      - name: Build Windows
         run: |
           haxelib run lime build windows -quiet
 
-      - name: Upload Build Artifact
+      - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Windows
           path: export/**/bin
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: 4.3.7
+
+      - name: Install Haxe Libraries
+        run: |
+          haxelib install hmm --quiet
+          haxelib run hmm setup --quiet
+          haxelib run hmm install --quiet
+
+      - name: Configure Lime Android
+        run: |
+          haxelib run lime config ANDROID_SDK $ANDROID_HOME --quiet
+          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_LATEST_HOME --quiet
+          haxelib run lime config JAVA_HOME $JAVA_HOME --quiet
+
+      - name: Build Android APK
+        run: |
+          haxelib run lime build android -quiet
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RuneVM-Android
+          path: export/android/bin/app/build/outputs/apk/**/*.apk
