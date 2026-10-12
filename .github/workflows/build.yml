@@ -52,7 +52,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: ''
+          packages: 'build-tools;33.0.2 platforms;android-33 platform-tools'
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses
 
       - name: Setup Haxe
         uses: krdlab/setup-haxe@v1
@@ -67,7 +70,9 @@ jobs:
 
       - name: Configure Lime Android
         run: |
-          printf "$JAVA_HOME\n$ANDROID_HOME\n$ANDROID_NDK_LATEST_HOME\n" | haxelib run lime setup android
+          haxelib run lime config ANDROID_SDK "$ANDROID_HOME" --quiet
+          haxelib run lime config ANDROID_NDK_ROOT "$ANDROID_NDK_LATEST_HOME" --quiet
+          haxelib run lime config JAVA_HOME "$JAVA_HOME" --quiet
 
       - name: Build Android APK
         run: |
