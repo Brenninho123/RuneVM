@@ -9,6 +9,7 @@
 	<haxelib name="lime" />
 	<haxelib name="openfl" />
 	<haxelib name="hxcpp" />
+	<haxelib name="flixel" />
 
 	<icon path="assets/icon.png" />
 
