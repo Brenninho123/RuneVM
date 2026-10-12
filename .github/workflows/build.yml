@@ -91,7 +91,7 @@ jobs:
 
       - name: Build Android APK
         run: |
-          haxelib run lime build android -quiet
+          haxelib run lime build android -quiet -DHXCPP_CPP11
 
       - name: Upload Android Artifact
         uses: actions/upload-artifact@v4
