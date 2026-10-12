@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+	<meta title="RuneVM" package="com.rune.vm" version="1.0.0" company="Brenninho123" />
+	
+	<app main="Main" path="export" file="RuneVM" />
+	
+	<source path="source" />
+	
+	<haxelib name="lime" />
+	<haxelib name="openfl" />
+
+	<haxeflag name="-dce" value="full" />
+	<haxedef name="HXCPP_CHECK_POINTER" if="debug" />
+	<haxedef name="HXCPP_STACK_LINE" if="debug" />
+
+	<window fps="60" hardware="true" vsync="true" />
+	<window width="1280" height="720" resizable="true" unless="mobile" />
+
+	<assets path="assets" rename="assets" />
+</project>
