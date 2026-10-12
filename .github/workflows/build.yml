@@ -23,13 +23,14 @@ jobs:
           haxelib install hmm --quiet
           haxelib run hmm setup
           haxelib run hmm install
+          haxelib run hxcpp setup
 
       - name: Build Project
         run: |
-          haxelib run lime build windows -final
+          haxelib run lime build windows
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Windows
-          path: export/final/windows/bin
+          path: export/**/bin
