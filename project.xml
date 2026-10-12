@@ -8,6 +8,7 @@
 	
 	<haxelib name="lime" />
 	<haxelib name="openfl" />
+	<haxelib name="hxcpp" />
 
 	<haxeflag name="-dce" value="full" />
 	<haxedef name="HXCPP_CHECK_POINTER" if="debug" />
