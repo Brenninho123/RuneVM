@@ -2,9 +2,7 @@ name: Windows Build
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -28,10 +26,10 @@ jobs:
 
       - name: Build Project
         run: |
-          haxelib run lime build windows
+          haxelib run lime build windows -final
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Windows
-          path: export/release/windows/bin
+          path: export/final/windows/bin
