@@ -1,63 +1,17 @@
-
 <?xml version="1.0" encoding="utf-8"?>
 <project>
-    <meta
-        title="RuneVM"
-        package="com.rune.vm"
-        version="2.0.0"
-        company="Brenninho123"
-    />
-
-    <app
-        main="Main"
-        file="RuneVM"
-        path="export"
-    />
-
-    <source path="source" />
-
-    <haxelib name="lime" />
-    <haxelib name="openfl" />
-    <haxelib name="flixel" />
-    <haxelib name="hxcpp" />
-
-    <haxedef name="FLX_NO_DEBUG" if="release" />
-
-    <window
-        width="1280"
-        height="720"
-        fps="60"
-        hardware="true"
-        vsync="true"
-        resizable="true"
-        if="desktop"
-    />
-
-    <window
-        width="0"
-        height="0"
-        fps="60"
-        hardware="true"
-        vsync="true"
-        resizable="false"
-        if="mobile"
-    />
-
-    <icon path="assets/icon.png" />
-
-    <assets path="assets" rename="assets" />
-
-    <haxelib name="extension-androidtools" if="android" />
-
-    <config:android
-        minimum-sdk-version="21"
-        target-sdk-version="33"
-        install-location="auto"
-        if="android"
-    />
-
-    <template
-        path="template"
-        if="android"
-    />
+  <meta title="RuneVM" package="com.rune.vm" version="2.0.0" company="Brenninho123" />
+  <app main="Main" file="RuneVM" path="export" />
+  <source path="source" />
+  <haxelib name="lime" />
+  <haxelib name="openfl" />
+  <haxelib name="flixel" />
+  <haxelib name="hxcpp" />
+  <haxelib name="extension-androidtools" if="android" />
+  <window width="1280" height="720" fps="60" hardware="true" vsync="true" resizable="true" if="desktop" />
+  <window width="0" height="0" fps="60" hardware="true" vsync="true" resizable="false" if="mobile" />
+  <icon path="assets/icon.png" />
+  <assets path="assets" rename="assets" />
+  <set name="ANDROID_MINIMUM_SDK_VERSION" value="21" if="android" />
+  <set name="ANDROID_TARGET_SDK_VERSION" value="33" if="android" />
 </project>
