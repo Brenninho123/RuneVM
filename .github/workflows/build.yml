@@ -1,7 +1,11 @@
+
 name: Cross-Platform Build
 
 on:
   push:
+    branches:
+      - main
+      - master
   pull_request:
   workflow_dispatch:
 
@@ -13,113 +17,140 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-windows:
+  windows:
     name: Windows x64
     runs-on: windows-latest
     timeout-minutes: 90
+
     defaults:
       run:
         shell: pwsh
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Haxe
         uses: krdlab/setup-haxe@v1
         with:
           haxe-version: 4.3.7
-      - name: Validate Project
+
+      - name: Configure Haxe
         run: |
-          $ErrorActionPreference = 'Stop'
-          if (!(Test-Path project.xml)) { throw 'Missing project.xml' }
-          $content = (Get-Content project.xml -Raw -Encoding UTF8).TrimStart([char]0xFEFF, [char]0x20, [char]0x09, [char]0x0D, [char]0x0A)
-          $xml = [System.Xml.XmlDocument]::new()
-          $xml.LoadXml($content)
-          if ($xml.DocumentElement.LocalName -ne 'project') { throw 'Expected project root' }
-          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path 'project.xml'), $content, [System.Text.UTF8Encoding]::new($false))
-          Write-Host 'Project XML validated and normalized'
-      - name: Configure HAXEPATH (Windows)
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $haxeExe = (Get-Command haxe -ErrorAction Stop).Source
-          $haxeDir = Split-Path -Parent $haxeExe
-          "HAXEPATH=$haxeDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $env:HAXEPATH = $haxeDir
-          Write-Host "HAXEPATH=$haxeDir"
-          haxe --version
-      - name: Install Libraries
-        run: |
-          haxelib install hmm --quiet
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          haxelib run hmm setup
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          haxelib run hmm install
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          haxelib list
-      - name: Cache Windows hxcpp Objects
+          $haxe = (Get-Command haxe).Source
+          $haxePath = Split-Path $haxe -Parent
+          "HAXEPATH=$haxePath" >> $env:GITHUB_ENV
+          "HAXE_STD_PATH=$haxePath/std" >> $env:GITHUB_ENV
+
+      - name: Cache Haxe Libraries
         uses: actions/cache@v4
         with:
-          path: .hxcpp-cache
-          key: runevm-hxcpp-windows-${{ hashFiles('hmm.json', 'project.xml') }}-${{ github.sha }}
-          restore-keys: |
-            runevm-hxcpp-windows-${{ hashFiles('hmm.json', 'project.xml') }}-
+          path: .haxelib
+          key: windows-haxe-4.3.7-${{ hashFiles('hmm.json') }}
+
+      - name: Install Dependencies
+        run: |
+          haxelib newrepo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          haxelib install hmm --quiet
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          haxelib run hmm setup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          haxelib run hmm install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build Windows
         run: |
-          $env:HXCPP_COMPILE_CACHE = Join-Path (Get-Location).Path ".hxcpp-cache"
           haxelib run lime build project.xml windows -release -64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Package Windows
         run: |
-          $exe = Get-ChildItem export -Recurse -File -Filter RuneVM.exe | Select-Object -First 1
-          if ($null -eq $exe) { throw 'RuneVM.exe not found' }
-          New-Item -ItemType Directory -Force artifacts/RuneVM-Windows | Out-Null
-          Copy-Item (Join-Path $exe.DirectoryName '*') artifacts/RuneVM-Windows -Recurse -Force
+          $exe = Get-ChildItem export -Recurse -Filter RuneVM.exe -File |
+            Select-Object -First 1
+
+          if ($null -eq $exe) {
+            throw "RuneVM.exe not found"
+          }
+
+          New-Item -ItemType Directory -Force `
+            -Path artifacts/RuneVM-Windows | Out-Null
+
+          Copy-Item `
+            "$($exe.Directory.FullName)/*" `
+            "artifacts/RuneVM-Windows/" `
+            -Recurse -Force
+
       - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Windows-x64
           path: artifacts/RuneVM-Windows/
           if-no-files-found: error
-          retention-days: 14
+          compression-level: 6
 
-  build-android:
-    name: Android APK
+  android:
+    name: Android ARM64
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+
     defaults:
       run:
         shell: bash
+
+    env:
+      ANDROID_NDK_VERSION: "25.2.9519653"
+      ANDROID_API_LEVEL: "21"
+      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/.hxcpp-cache
+      HXCPP_NO_PCH: "1"
+      HXCPP_NO_PRECOMPILED_HEADERS: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+
       - name: Setup Haxe
         uses: krdlab/setup-haxe@v1
         with:
           haxe-version: 4.3.7
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: runevm-gradle-${{ runner.os }}-${{ hashFiles('hmm.json', 'project.xml') }}
-          restore-keys: |
-            runevm-gradle-${{ runner.os }}-
+
+      - name: Configure Haxe
+        run: |
+          set -euo pipefail
+
+          HAXE_BIN="$(command -v haxe)"
+          HAXE_DIR="$(dirname "$(readlink -f "$HAXE_BIN")")"
+
+          echo "HAXEPATH=$HAXE_DIR" >> "$GITHUB_ENV"
+          echo "HAXE_STD_PATH=$HAXE_DIR/std" >> "$GITHUB_ENV"
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-33 build-tools;33.0.2 ndk;25.2.9519653'
-      - name: Configure Android
+          packages: >-
+            platform-tools
+            platforms;android-33
+            build-tools;33.0.2
+            ndk;25.2.9519653
+
+      - name: Configure Android NDK
         run: |
           set -euo pipefail
-          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          test -n "$SDK"
-          NDK="$SDK/ndk/25.2.9519653"
+
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          NDK="$SDK/ndk/$ANDROID_NDK_VERSION"
+
           test -d "$NDK"
+
           {
             echo "ANDROID_HOME=$SDK"
             echo "ANDROID_SDK_ROOT=$SDK"
@@ -128,79 +159,121 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK"
             echo "ANDROID_NDK_DIR=$NDK"
           } >> "$GITHUB_ENV"
-      - name: Validate and Normalize Project
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          path = Path('project.xml')
-          text = path.read_text(encoding='utf-8-sig').lstrip()
-          ET.fromstring(text)
-          path.write_text(text, encoding='utf-8')
-          print('Project XML validated and normalized')
-          PY
-      - name: Configure HAXEPATH (Linux)
-        run: |
-          set -euo pipefail
-          HAXE_EXE="$(command -v haxe)"
-          HAXE_DIR="$(dirname "$(readlink -f "$HAXE_EXE")")"
-          echo "HAXEPATH=$HAXE_DIR" >> "$GITHUB_ENV"
-          echo "HAXEPATH=$HAXE_DIR"
-          haxe --version
-      - name: Install Libraries
-        run: |
-          set -euo pipefail
-          haxelib install hmm --quiet
-          haxelib run hmm setup
-          haxelib run hmm install
-          haxelib list
-      - name: Cache Android hxcpp Objects
+
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          test -x "$TOOLCHAIN/aarch64-linux-android21-clang++"
+
+          echo "Android NDK: $NDK"
+
+      - name: Cache Haxe Libraries
+        uses: actions/cache@v4
+        with:
+          path: .haxelib
+          key: android-haxe-4.3.7-${{ hashFiles('hmm.json') }}
+
+      - name: Cache hxcpp
         uses: actions/cache@v4
         with:
           path: .hxcpp-cache
-          key: runevm-hxcpp-android-${{ hashFiles('hmm.json', 'project.xml') }}-${{ github.sha }}
+          key: android-hxcpp-no-pch-v3-${{ hashFiles('hmm.json') }}
           restore-keys: |
-            runevm-hxcpp-android-${{ hashFiles('hmm.json', 'project.xml') }}-
-      - name: Configure Lime
+            android-hxcpp-no-pch-v3-
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Dependencies
         run: |
           set -euo pipefail
+
+          haxelib newrepo
+          haxelib install hmm --quiet
+          haxelib run hmm setup
+          haxelib run hmm install
+
+          haxelib list
+
+      - name: Configure Lime Android
+        run: |
+          set -euo pipefail
+
+          haxelib run lime config JAVA_HOME "$JAVA_HOME"
           haxelib run lime config ANDROID_SDK "$ANDROID_SDK_ROOT"
           haxelib run lime config ANDROID_NDK_ROOT "$ANDROID_NDK_ROOT"
-          haxelib run lime config JAVA_HOME "$JAVA_HOME"
-          haxelib run lime config ANDROID_NDK "$ANDROID_NDK_ROOT"
-          echo "Initializing Lime Android target..."
-          set +o pipefail
-          yes "" | haxelib run lime setup android
-          status=${PIPESTATUS[1]}
-          set -o pipefail
-          if [ "$status" -ne 0 ]; then
-            echo "Lime Android setup failed with exit code $status"
-            exit "$status"
-          fi
+
+          mkdir -p "$HOME/.lime"
+
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="utf-8"?>' \
+            '<config>' \
+            '  <define name="ANDROID_SETUP" value="true" />' \
+            '</config>' \
+            > "$HOME/.lime/config.xml"
+
+      - name: Verify NDK C++ Headers
+        run: |
+          set -euo pipefail
+
+          SYSROOT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+
+          test -f "$SYSROOT/usr/include/c++/v1/typeinfo"
+
+          COMPILER="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++"
+
+          printf '#include <typeinfo>\nint main() { return 0; }\n' \
+            > /tmp/runevm-ndk-test.cpp
+
+          "$COMPILER" \
+            -fsyntax-only \
+            /tmp/runevm-ndk-test.cpp
+
+          echo "NDK C++ headers verified"
+
       - name: Build Android
         run: |
           set -euo pipefail
-          export HXCPP_COMPILE_CACHE="$GITHUB_WORKSPACE/.hxcpp-cache"
-          haxelib run lime build project.xml android -release -DHXCPP_ANDROID_PLATFORM=21
+
+          rm -rf "$HXCPP_COMPILE_CACHE"
+          mkdir -p "$HXCPP_COMPILE_CACHE"
+
+          unset CC CXX CPP LD AR
+
+          haxelib run lime build project.xml android \
+            -release \
+            -DNO_PRECOMPILED_HEADERS \
+            -DHXCPP_NO_PCH \
+            -DHXCPP_ANDROID_PLATFORM=21
+
       - name: Collect APK
         run: |
           set -euo pipefail
+
           mkdir -p artifacts/RuneVM-Android
-          find export -type f -name '*.apk' -exec cp {} artifacts/RuneVM-Android/ \;
-          compgen -G 'artifacts/RuneVM-Android/*.apk' > /dev/null || { echo 'No APK generated'; exit 1; }
+
+          find export -type f -name "*.apk" \
+            -exec cp {} artifacts/RuneVM-Android/ \;
+
+          if ! compgen -G "artifacts/RuneVM-Android/*.apk" > /dev/null; then
+            echo "APK not generated"
+            exit 1
+          fi
+
           ls -lh artifacts/RuneVM-Android/
-      - name: Upload Android
+
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Android
           path: artifacts/RuneVM-Android/*.apk
           if-no-files-found: error
-          retention-days: 14
-      - name: Upload Android Logs
+          compression-level: 0
+
+      - name: Upload Diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: RuneVM-Android-Diagnostics
+          name: RuneVM-Android-Logs
           path: |
             export/**/*.log
             export/**/reports/**
