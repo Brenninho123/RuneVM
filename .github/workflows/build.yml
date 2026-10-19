@@ -1,3 +1,4 @@
+
 name: Cross-Platform Build
 
 on:
@@ -5,10 +6,22 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: runevm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows:
-    name: Build Windows
+    name: Windows x64
     runs-on: windows-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        shell: pwsh
 
     steps:
       - name: Checkout Repository
@@ -22,22 +35,46 @@ jobs:
       - name: Install Haxe Libraries
         run: |
           haxelib install hmm --quiet
-          haxelib run hmm setup --quiet
-          haxelib run hmm install --quiet
+          haxelib run hmm setup
+          haxelib run hmm install
+          haxelib list
 
       - name: Build Windows
         run: |
-          haxelib run lime build windows -quiet
+          haxelib run lime build project.hxp windows -release
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Package Windows
+        run: |
+          $files = @(Get-ChildItem -Path export -Filter RuneVM.exe -Recurse -File)
+          if ($files.Count -eq 0) {
+            throw "RuneVM.exe was not generated"
+          }
+
+          $exe = $files[0]
+          $output = "artifacts/RuneVM-Windows"
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          Copy-Item -Path "$($exe.Directory.FullName)/*" -Destination $output -Recurse -Force
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Windows
-          path: export/**/bin
+          path: artifacts/RuneVM-Windows/
+          if-no-files-found: error
+          compression-level: 6
 
   build-android:
-    name: Build Android
-    runs-on: ubuntu-latest
+    name: Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      ANDROID_API: "33"
+      ANDROID_NDK_VERSION: "25.2.9519653"
+      HXCPP_COMPILE_CACHE: "${{ github.workspace }}/.hxcpp-cache"
 
     steps:
       - name: Checkout Repository
@@ -46,55 +83,117 @@ jobs:
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'build-tools;33.0.2 platforms;android-33 ndk;25.2.9519653 platform-tools'
-
-      - name: Accept Android SDK Licenses
-        run: yes | sdkmanager --licenses
+          distribution: temurin
+          java-version: "17"
 
       - name: Setup Haxe
         uses: krdlab/setup-haxe@v1
         with:
           haxe-version: 4.3.7
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-33
+            build-tools;33.0.2
+            ndk;25.2.9519653
+
+      - name: Configure Android Environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          NDK="$SDK/ndk/$ANDROID_NDK_VERSION"
+
+          test -d "$SDK"
+          test -d "$NDK"
+
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_DIR=$NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_PLATFORM=android-21" >> "$GITHUB_ENV"
+
+          echo "SDK: $SDK"
+          echo "NDK: $NDK"
+          java -version
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            cmake \
+            ninja-build \
+            libgtk-3-dev \
+            libgl1-mesa-dev \
+            libasound2-dev \
+            libpulse-dev \
+            libudev-dev \
+            libx11-dev \
+            libxext-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxkbcommon-dev \
+            pkg-config
+
       - name: Install Haxe Libraries
         run: |
+          set -euo pipefail
           haxelib install hmm --quiet
-          haxelib run hmm setup --quiet
-          haxelib run hmm install --quiet
+          haxelib run hmm setup
+          haxelib run hmm install
+          haxelib list
 
-      - name: Configure Lime Android Environment
+      - name: Configure Lime Android
+        shell: bash
         run: |
-          NDK_PATH="$ANDROID_HOME/ndk/25.2.9519653"
-          
-          echo "ANDROID_SDK=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-          
-          mkdir -p /home/runner/.lime
-          cat <<EOF > /home/runner/.lime/config.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <config>
-            <define name="ANDROID_SETUP" value="true" />
-            <section id="android">
-              <path name="JAVA_HOME" value="$JAVA_HOME" />
-              <path name="ANDROID_SDK" value="$ANDROID_HOME" />
-              <path name="ANDROID_NDK_ROOT" value="$NDK_PATH" />
-            </section>
-          </config>
-          EOF
+          set -euo pipefail
+
+          haxelib run lime config ANDROID_SDK "$ANDROID_SDK_ROOT"
+          haxelib run lime config ANDROID_NDK_ROOT "$ANDROID_NDK_ROOT"
+          haxelib run lime config JAVA_HOME "$JAVA_HOME"
 
       - name: Build Android APK
+        shell: bash
         run: |
-          haxelib run lime build android -quiet -DHXCPP_ANDROID_PLATFORM=21 -DHXCPP_CPP11 -DNO_PRECOMPILED_HEADERS
+          set -euo pipefail
+
+          haxelib run lime build project.hxp android \
+            -release \
+            -DHXCPP_ANDROID_PLATFORM=21 \
+            -DHXCPP_CPP11 \
+            -DNO_PRECOMPILED_HEADERS
+
+      - name: Collect Android APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts/RuneVM-Android
+
+          find export -type f -name "*.apk" -print \
+            -exec cp {} artifacts/RuneVM-Android/ \;
+
+          if ! compgen -G "artifacts/RuneVM-Android/*.apk" > /dev/null; then
+            echo "ERROR: No APK generated"
+            exit 1
+          fi
+
+          ls -lh artifacts/RuneVM-Android/
 
       - name: Upload Android Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Android
-          path: export/android/bin/app/build/outputs/apk/**/*.apk
+          path: artifacts/RuneVM-Android/*.apk
+          if-no-files-found: error
+          compression-level: 0
