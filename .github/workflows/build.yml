@@ -55,8 +55,16 @@ jobs:
           haxelib run hmm install
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           haxelib list
+      - name: Cache Windows hxcpp Objects
+        uses: actions/cache@v4
+        with:
+          path: .hxcpp-cache
+          key: runevm-hxcpp-windows-${{ hashFiles('hmm.json', 'project.xml') }}-${{ github.sha }}
+          restore-keys: |
+            runevm-hxcpp-windows-${{ hashFiles('hmm.json', 'project.xml') }}-
       - name: Build Windows
         run: |
+          $env:HXCPP_COMPILE_CACHE = Join-Path (Get-Location).Path ".hxcpp-cache"
           haxelib run lime build project.xml windows -release -64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package Windows
@@ -92,6 +100,15 @@ jobs:
         uses: krdlab/setup-haxe@v1
         with:
           haxe-version: 4.3.7
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: runevm-gradle-${{ runner.os }}-${{ hashFiles('hmm.json', 'project.xml') }}
+          restore-keys: |
+            runevm-gradle-${{ runner.os }}-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -137,15 +154,33 @@ jobs:
           haxelib run hmm setup
           haxelib run hmm install
           haxelib list
+      - name: Cache Android hxcpp Objects
+        uses: actions/cache@v4
+        with:
+          path: .hxcpp-cache
+          key: runevm-hxcpp-android-${{ hashFiles('hmm.json', 'project.xml') }}-${{ github.sha }}
+          restore-keys: |
+            runevm-hxcpp-android-${{ hashFiles('hmm.json', 'project.xml') }}-
       - name: Configure Lime
         run: |
           set -euo pipefail
           haxelib run lime config ANDROID_SDK "$ANDROID_SDK_ROOT"
           haxelib run lime config ANDROID_NDK_ROOT "$ANDROID_NDK_ROOT"
           haxelib run lime config JAVA_HOME "$JAVA_HOME"
+          haxelib run lime config ANDROID_NDK "$ANDROID_NDK_ROOT"
+          echo "Initializing Lime Android target..."
+          set +o pipefail
+          yes "" | haxelib run lime setup android
+          status=${PIPESTATUS[1]}
+          set -o pipefail
+          if [ "$status" -ne 0 ]; then
+            echo "Lime Android setup failed with exit code $status"
+            exit "$status"
+          fi
       - name: Build Android
         run: |
           set -euo pipefail
+          export HXCPP_COMPILE_CACHE="$GITHUB_WORKSPACE/.hxcpp-cache"
           haxelib run lime build project.xml android -release -DHXCPP_ANDROID_PLATFORM=21
       - name: Collect APK
         run: |
