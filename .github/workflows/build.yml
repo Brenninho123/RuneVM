@@ -37,6 +37,15 @@ jobs:
           if ($xml.DocumentElement.LocalName -ne 'project') { throw 'Expected project root' }
           [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path 'project.xml'), $content, [System.Text.UTF8Encoding]::new($false))
           Write-Host 'Project XML validated and normalized'
+      - name: Configure HAXEPATH (Windows)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $haxeExe = (Get-Command haxe -ErrorAction Stop).Source
+          $haxeDir = Split-Path -Parent $haxeExe
+          "HAXEPATH=$haxeDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $env:HAXEPATH = $haxeDir
+          Write-Host "HAXEPATH=$haxeDir"
+          haxe --version
       - name: Install Libraries
         run: |
           haxelib install hmm --quiet
@@ -113,6 +122,14 @@ jobs:
           path.write_text(text, encoding='utf-8')
           print('Project XML validated and normalized')
           PY
+      - name: Configure HAXEPATH (Linux)
+        run: |
+          set -euo pipefail
+          HAXE_EXE="$(command -v haxe)"
+          HAXE_DIR="$(dirname "$(readlink -f "$HAXE_EXE")")"
+          echo "HAXEPATH=$HAXE_DIR" >> "$GITHUB_ENV"
+          echo "HAXEPATH=$HAXE_DIR"
+          haxe --version
       - name: Install Libraries
         run: |
           set -euo pipefail
