@@ -1,11 +1,7 @@
-
 name: Cross-Platform Build
 
 on:
   push:
-    branches:
-      - main
-      - master
   pull_request:
   workflow_dispatch:
 
@@ -21,144 +17,83 @@ jobs:
     name: Windows x64
     runs-on: windows-latest
     timeout-minutes: 90
-
     defaults:
       run:
         shell: pwsh
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Haxe
         uses: krdlab/setup-haxe@v1
         with:
           haxe-version: 4.3.7
-
       - name: Validate Project
         run: |
-          if (!(Test-Path "project.xml")) {
-            throw "Missing project.xml"
-          }
-
-          [xml]$project = Get-Content project.xml
-          Write-Host "RuneVM project.xml validated"
-
-      - name: Install Haxe Libraries
+          $ErrorActionPreference = 'Stop'
+          if (!(Test-Path project.xml)) { throw 'Missing project.xml' }
+          $content = (Get-Content project.xml -Raw -Encoding UTF8).TrimStart([char]0xFEFF, [char]0x20, [char]0x09, [char]0x0D, [char]0x0A)
+          $xml = [System.Xml.XmlDocument]::new()
+          $xml.LoadXml($content)
+          if ($xml.DocumentElement.LocalName -ne 'project') { throw 'Expected project root' }
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path 'project.xml'), $content, [System.Text.UTF8Encoding]::new($false))
+          Write-Host 'Project XML validated and normalized'
+      - name: Install Libraries
         run: |
           haxelib install hmm --quiet
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           haxelib run hmm setup
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           haxelib run hmm install
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           haxelib list
-
-      - name: Check Lime
-        run: |
-          haxelib run lime --version
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
       - name: Build Windows
         run: |
           haxelib run lime build project.xml windows -release -64
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package Windows
         run: |
-          $executables = @(
-            Get-ChildItem export -Recurse -Filter RuneVM.exe -File
-          )
-
-          if ($executables.Count -eq 0) {
-            throw "RuneVM.exe not found"
-          }
-
-          $exe = $executables[0]
-          $output = "artifacts/RuneVM-Windows"
-
-          New-Item -ItemType Directory -Force -Path $output | Out-Null
-
-          Copy-Item `
-            -Path "$($exe.Directory.FullName)/*" `
-            -Destination $output `
-            -Recurse `
-            -Force
-
-          Get-ChildItem $output
-
-      - name: Upload Windows Artifact
+          $exe = Get-ChildItem export -Recurse -File -Filter RuneVM.exe | Select-Object -First 1
+          if ($null -eq $exe) { throw 'RuneVM.exe not found' }
+          New-Item -ItemType Directory -Force artifacts/RuneVM-Windows | Out-Null
+          Copy-Item (Join-Path $exe.DirectoryName '*') artifacts/RuneVM-Windows -Recurse -Force
+      - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Windows-x64
           path: artifacts/RuneVM-Windows/
           if-no-files-found: error
-          compression-level: 6
           retention-days: 14
 
   build-android:
     name: Android APK
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-
-    env:
-      ANDROID_API_LEVEL: "33"
-      ANDROID_NDK_VERSION: "25.2.9519653"
-      HXCPP_COMPILE_CACHE: ${{ github.workspace }}/.hxcpp-cache
-
     defaults:
       run:
         shell: bash
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
+          java-version: '17'
       - name: Setup Haxe
         uses: krdlab/setup-haxe@v1
         with:
           haxe-version: 4.3.7
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-33 build-tools;33.0.2 ndk;25.2.9519653'
-
-      - name: Configure Android Environment
+      - name: Configure Android
         run: |
           set -euo pipefail
-
           SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-
-          if [ -z "$SDK" ]; then
-            echo "Android SDK path is missing"
-            exit 1
-          fi
-
-          NDK="$SDK/ndk/$ANDROID_NDK_VERSION"
-
-          test -d "$SDK"
+          test -n "$SDK"
+          NDK="$SDK/ndk/25.2.9519653"
           test -d "$NDK"
-
           {
             echo "ANDROID_HOME=$SDK"
             echo "ANDROID_SDK_ROOT=$SDK"
@@ -166,92 +101,49 @@ jobs:
             echo "ANDROID_NDK_ROOT=$NDK"
             echo "ANDROID_NDK_HOME=$NDK"
             echo "ANDROID_NDK_DIR=$NDK"
-            echo "ANDROID_PLATFORM=android-21"
           } >> "$GITHUB_ENV"
-
-          echo "SDK: $SDK"
-          echo "NDK: $NDK"
-
-          java -version
-
-      - name: Validate Project
+      - name: Validate and Normalize Project
         run: |
-          set -euo pipefail
-
-          test -f project.xml
-          test -f hmm.json
-          test -d source
-
           python3 - <<'PY'
+          from pathlib import Path
           import xml.etree.ElementTree as ET
-          ET.parse("project.xml")
-          print("Project XML syntax valid")
+          path = Path('project.xml')
+          text = path.read_text(encoding='utf-8-sig').lstrip()
+          ET.fromstring(text)
+          path.write_text(text, encoding='utf-8')
+          print('Project XML validated and normalized')
           PY
-
-      - name: Install Haxe Libraries
+      - name: Install Libraries
         run: |
           set -euo pipefail
-
           haxelib install hmm --quiet
           haxelib run hmm setup
           haxelib run hmm install
-
           haxelib list
-
-      - name: Check Android Toolchain
+      - name: Configure Lime
         run: |
           set -euo pipefail
-
-          echo "Java:"
-          java -version
-
-          echo "Haxe:"
-          haxe --version
-
-          echo "Lime:"
-          haxelib run lime --version
-
-          echo "Android NDK:"
-          ls "$ANDROID_NDK_ROOT"
-
-          echo "Android SDK:"
-          sdkmanager --list_installed
-
+          haxelib run lime config ANDROID_SDK "$ANDROID_SDK_ROOT"
+          haxelib run lime config ANDROID_NDK_ROOT "$ANDROID_NDK_ROOT"
+          haxelib run lime config JAVA_HOME "$JAVA_HOME"
       - name: Build Android
         run: |
           set -euo pipefail
-
-          haxelib run lime build project.xml android \
-            -release \
-            -DHXCPP_ANDROID_PLATFORM=21 \
-            -DNO_PRECOMPILED_HEADERS
-
+          haxelib run lime build project.xml android -release -DHXCPP_ANDROID_PLATFORM=21
       - name: Collect APK
         run: |
           set -euo pipefail
-
           mkdir -p artifacts/RuneVM-Android
-
-          find export -type f -name "*.apk" \
-            -exec cp {} artifacts/RuneVM-Android/ \;
-
-          if ! compgen -G "artifacts/RuneVM-Android/*.apk" > /dev/null; then
-            echo "No Android APK generated"
-            find export -maxdepth 6 -type f | head -100
-            exit 1
-          fi
-
+          find export -type f -name '*.apk' -exec cp {} artifacts/RuneVM-Android/ \;
+          compgen -G 'artifacts/RuneVM-Android/*.apk' > /dev/null || { echo 'No APK generated'; exit 1; }
           ls -lh artifacts/RuneVM-Android/
-
-      - name: Upload Android APK
+      - name: Upload Android
         uses: actions/upload-artifact@v4
         with:
           name: RuneVM-Android
           path: artifacts/RuneVM-Android/*.apk
           if-no-files-found: error
-          compression-level: 0
           retention-days: 14
-
       - name: Upload Android Logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -260,6 +152,4 @@ jobs:
           path: |
             export/**/*.log
             export/**/reports/**
-            export/**/build/**/*.log
           if-no-files-found: ignore
-          retention-days: 7
